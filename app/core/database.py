@@ -12,7 +12,9 @@ engine = create_async_engine(
     settings.SQLALCHEMY_DATABASE_URI,
     echo=settings.APP_ENV == "development",
     future=True,
+    connect_args={"statement_cache_size": 0},
 )
+
 
 async_session_maker = async_sessionmaker(
     bind=engine,
