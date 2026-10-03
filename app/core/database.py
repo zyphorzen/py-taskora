@@ -8,10 +8,13 @@ from sqlalchemy.orm import DeclarativeBase
 
 from app.core.config import settings
 
+from sqlalchemy.pool import NullPool
+
 engine = create_async_engine(
     settings.SQLALCHEMY_DATABASE_URI,
     echo=settings.APP_ENV == "development",
     future=True,
+    poolclass=NullPool,
     connect_args={"statement_cache_size": 0},
 )
 
