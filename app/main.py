@@ -1,7 +1,8 @@
 from fastapi import FastAPI
+from app.core.config import settings
 
 app = FastAPI(
-    title="Taskora API",
+    title=settings.PROJECT_NAME,
     version="1.0.0",
     description="Backend API for Taskora V1 - Schedule, Task, Calendar, and Reminder Management",
 )
@@ -9,4 +10,4 @@ app = FastAPI(
 
 @app.get("/health", tags=["Health"])
 async def health_check() -> dict[str, str]:
-    return {"status": "ok", "app": "Taskora API"}
+    return {"status": "ok", "app": settings.PROJECT_NAME}
