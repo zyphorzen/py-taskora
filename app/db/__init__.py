@@ -1,1 +1,1 @@
-"""Database migrations and utilities package."""
+"""Database package."""

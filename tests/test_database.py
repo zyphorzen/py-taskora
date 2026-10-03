@@ -15,7 +15,6 @@ def test_database_engine_config():
     assert engine.url.database == settings.POSTGRES_DB
 
 
-
 def test_session_maker():
     session = async_session_maker()
     assert isinstance(session, AsyncSession)

@@ -17,5 +17,3 @@ def test_alembic_files_exist():
     env_content = Path("app/db/migrations/env.py").read_text()
     assert "target_metadata = Base.metadata" in env_content
     assert "settings.SQLALCHEMY_DATABASE_URI" in env_content
-
-
