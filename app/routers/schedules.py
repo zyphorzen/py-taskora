@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,11 +11,102 @@ from app.models.schedule import Schedule
 from app.models.user import User
 from app.schemas.schedule import (
     ScheduleCreate,
+    ScheduleOccurrence,
     ScheduleResponse,
     ScheduleUpdate,
 )
 
 router = APIRouter(prefix="/schedules", tags=["Schedules"])
+
+
+def add_months(dt: datetime, months: int) -> datetime:
+    year = dt.year + (dt.month + months - 1) // 12
+    month = (dt.month + months - 1) % 12 + 1
+    is_leap = year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
+    month_days = [31, 29 if is_leap else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    day = min(dt.day, month_days[month - 1])
+    return dt.replace(year=year, month=month, day=day)
+
+
+def add_years(dt: datetime, years: int) -> datetime:
+    year = dt.year + years
+    is_leap = year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
+    day = dt.day
+    if dt.month == 2 and dt.day == 29 and not is_leap:
+        day = 28
+    return dt.replace(year=year, day=day)
+
+
+def generate_schedule_occurrences(
+    schedule: Schedule,
+    window_start: datetime,
+    window_end: datetime,
+) -> list[ScheduleOccurrence]:
+    duration = schedule.end_time - schedule.start_time
+    occurrences: list[ScheduleOccurrence] = []
+
+    if not schedule.is_recurring:
+        if schedule.start_time <= window_end and schedule.end_time >= window_start:
+            occurrences.append(
+                ScheduleOccurrence(
+                    schedule_id=schedule.id,
+                    title=schedule.title,
+                    description=schedule.description,
+                    start_time=schedule.start_time,
+                    end_time=schedule.end_time,
+                    is_all_day=schedule.is_all_day,
+                    location=schedule.location,
+                    status=schedule.status,
+                    category_id=schedule.category_id,
+                    is_recurring=False,
+                    recurrence_pattern=None,
+                )
+            )
+        return occurrences
+
+    cur_start = schedule.start_time
+    interval = max(schedule.recurrence_interval, 1)
+    pattern = (schedule.recurrence_pattern or "daily").lower()
+    end_limit = schedule.recurrence_end_date
+    max_occurrences = 500
+    count = 0
+
+    while cur_start <= window_end and count < max_occurrences:
+        if end_limit is not None and cur_start > end_limit:
+            break
+
+        cur_end = cur_start + duration
+        if cur_start <= window_end and cur_end >= window_start:
+            occurrences.append(
+                ScheduleOccurrence(
+                    schedule_id=schedule.id,
+                    title=schedule.title,
+                    description=schedule.description,
+                    start_time=cur_start,
+                    end_time=cur_end,
+                    is_all_day=schedule.is_all_day,
+                    location=schedule.location,
+                    status=schedule.status,
+                    category_id=schedule.category_id,
+                    is_recurring=True,
+                    recurrence_pattern=pattern,
+                )
+            )
+
+        if pattern == "daily":
+            cur_start = cur_start + timedelta(days=interval)
+        elif pattern == "weekly":
+            cur_start = cur_start + timedelta(days=7 * interval)
+        elif pattern == "monthly":
+            cur_start = add_months(cur_start, interval)
+        elif pattern == "yearly":
+            cur_start = add_years(cur_start, interval)
+        else:
+            cur_start = cur_start + timedelta(days=interval)
+
+        count += 1
+
+    return occurrences
 
 
 async def _validate_category_ownership(
@@ -50,6 +141,12 @@ async def create_schedule(
 ) -> Schedule:
     await _validate_category_ownership(schedule_in.category_id, current_user.id, db)
 
+    pattern_val = (
+        schedule_in.recurrence_pattern.value
+        if hasattr(schedule_in.recurrence_pattern, "value")
+        else schedule_in.recurrence_pattern
+    )
+
     schedule = Schedule(
         user_id=current_user.id,
         category_id=schedule_in.category_id,
@@ -60,11 +157,52 @@ async def create_schedule(
         is_all_day=schedule_in.is_all_day,
         location=schedule_in.location,
         status=schedule_in.status,
+        is_recurring=schedule_in.is_recurring,
+        recurrence_pattern=pattern_val,
+        recurrence_interval=schedule_in.recurrence_interval,
+        recurrence_end_date=schedule_in.recurrence_end_date,
     )
     db.add(schedule)
     await db.commit()
     await db.refresh(schedule)
     return schedule
+
+
+@router.get(
+    "/occurrences",
+    response_model=list[ScheduleOccurrence],
+    status_code=status.HTTP_200_OK,
+    summary="Get schedule occurrences within a date window including recurring expansions",
+)
+async def get_schedule_occurrences(
+    start_date: datetime = Query(
+        ..., description="Window start timestamp with timezone"
+    ),
+    end_date: datetime = Query(..., description="Window end timestamp with timezone"),
+    category_id: uuid.UUID | None = Query(None, description="Optional category filter"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[ScheduleOccurrence]:
+    if end_date < start_date:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="end_date must be greater than or equal to start_date",
+        )
+
+    stmt = select(Schedule).where(Schedule.user_id == current_user.id)
+    if category_id:
+        stmt = stmt.where(Schedule.category_id == category_id)
+
+    result = await db.execute(stmt)
+    schedules = list(result.scalars().all())
+
+    all_occurrences: list[ScheduleOccurrence] = []
+    for sch in schedules:
+        expanded = generate_schedule_occurrences(sch, start_date, end_date)
+        all_occurrences.extend(expanded)
+
+    all_occurrences.sort(key=lambda occ: occ.start_time)
+    return all_occurrences
 
 
 @router.get(
@@ -84,6 +222,7 @@ async def list_schedules(
     status_filter: str | None = Query(
         None, alias="status", description="Filter by status"
     ),
+    is_recurring: bool | None = Query(None, description="Filter by recurrence flag"),
     q: str | None = Query(
         None, description="Search keyword in title, description, or location"
     ),
@@ -117,6 +256,9 @@ async def list_schedules(
 
     if status_filter:
         stmt = stmt.where(Schedule.status == status_filter)
+
+    if is_recurring is not None:
+        stmt = stmt.where(Schedule.is_recurring == is_recurring)
 
     allowed_sort_fields = {
         "start_time": Schedule.start_time,
@@ -220,6 +362,52 @@ async def update_schedule(
     if "status" in update_data:
         schedule.status = update_data["status"]
 
+    if "is_recurring" in update_data:
+        schedule.is_recurring = update_data["is_recurring"]
+
+    if "recurrence_pattern" in update_data:
+        pat = update_data["recurrence_pattern"]
+        schedule.recurrence_pattern = pat.value if hasattr(pat, "value") else pat
+
+    if (
+        "recurrence_interval" in update_data
+        and update_data["recurrence_interval"] is not None
+    ):
+        schedule.recurrence_interval = update_data["recurrence_interval"]
+
+    if "recurrence_end_date" in update_data:
+        schedule.recurrence_end_date = update_data["recurrence_end_date"]
+
+    await db.commit()
+    await db.refresh(schedule)
+    return schedule
+
+
+@router.post(
+    "/{schedule_id}/stop-recurrence",
+    response_model=ScheduleResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Stop recurrence for a recurring schedule",
+)
+async def stop_recurrence(
+    schedule_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> Schedule:
+    stmt = select(Schedule).where(
+        Schedule.id == schedule_id,
+        Schedule.user_id == current_user.id,
+    )
+    result = await db.execute(stmt)
+    schedule = result.scalar_one_or_none()
+    if not schedule:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Schedule not found",
+        )
+
+    schedule.is_recurring = False
+    schedule.recurrence_end_date = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(schedule)
     return schedule
