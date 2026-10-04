@@ -11,6 +11,7 @@ from app.core.database import Base
 
 if TYPE_CHECKING:
     from app.models.category import Category
+    from app.models.reminder import Reminder
     from app.models.schedule import Schedule
     from app.models.task import Task
 
@@ -73,6 +74,11 @@ class User(Base):
     )
     schedules: Mapped[list["Schedule"]] = relationship(
         "Schedule",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    reminders: Mapped[list["Reminder"]] = relationship(
+        "Reminder",
         back_populates="user",
         cascade="all, delete-orphan",
     )

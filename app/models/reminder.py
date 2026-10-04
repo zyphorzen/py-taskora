@@ -2,20 +2,20 @@ import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 
 if TYPE_CHECKING:
-    from app.models.category import Category
-    from app.models.reminder import Reminder
+    from app.models.schedule import Schedule
+    from app.models.task import Task
     from app.models.user import User
 
 
-class Task(Base):
-    __tablename__ = "tasks"
+class Reminder(Base):
+    __tablename__ = "reminders"
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -29,9 +29,16 @@ class Task(Base):
         index=True,
         nullable=False,
     )
-    category_id: Mapped[uuid.UUID | None] = mapped_column(
+    task_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("categories.id", ondelete="SET NULL"),
+        ForeignKey("tasks.id", ondelete="CASCADE"),
+        index=True,
+        nullable=True,
+        default=None,
+    )
+    schedule_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("schedules.id", ondelete="CASCADE"),
         index=True,
         nullable=True,
         default=None,
@@ -40,34 +47,28 @@ class Task(Base):
         String(255),
         nullable=False,
     )
-    description: Mapped[str | None] = mapped_column(
-        Text,
+    remind_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        index=True,
+        nullable=False,
+    )
+    is_sent: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default="false",
+        index=True,
+        nullable=False,
+    )
+    sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
         nullable=True,
         default=None,
     )
-    status: Mapped[str] = mapped_column(
+    notification_type: Mapped[str] = mapped_column(
         String(50),
-        default="todo",
-        server_default="todo",
-        index=True,
+        default="push",
+        server_default="push",
         nullable=False,
-    )
-    priority: Mapped[str] = mapped_column(
-        String(20),
-        default="medium",
-        server_default="medium",
-        index=True,
-        nullable=False,
-    )
-    due_date: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True,
-        default=None,
-    )
-    completed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True,
-        default=None,
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -83,13 +84,13 @@ class Task(Base):
         nullable=False,
     )
 
-    user: Mapped["User"] = relationship("User", back_populates="tasks")
-    category: Mapped["Category | None"] = relationship(
-        "Category", back_populates="tasks"
-    )
-    reminders: Mapped[list["Reminder"]] = relationship(
-        "Reminder", back_populates="task", cascade="all, delete-orphan"
+    user: Mapped["User"] = relationship("User", back_populates="reminders")
+    task: Mapped["Task | None"] = relationship("Task", back_populates="reminders")
+    schedule: Mapped["Schedule | None"] = relationship(
+        "Schedule", back_populates="reminders"
     )
 
     def __repr__(self) -> str:
-        return f"<Task id={self.id} title={self.title!r} status={self.status!r} priority={self.priority!r}>"
+        return (
+            f"<Reminder id={self.id} title={self.title!r} remind_at={self.remind_at}>"
+        )

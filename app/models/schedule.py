@@ -10,6 +10,7 @@ from app.core.database import Base
 
 if TYPE_CHECKING:
     from app.models.category import Category
+    from app.models.reminder import Reminder
     from app.models.user import User
 
 
@@ -111,6 +112,9 @@ class Schedule(Base):
     user: Mapped["User"] = relationship("User", back_populates="schedules")
     category: Mapped["Category | None"] = relationship(
         "Category", back_populates="schedules"
+    )
+    reminders: Mapped[list["Reminder"]] = relationship(
+        "Reminder", back_populates="schedule", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:
