@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from app.core.config import settings
 from app.routers.auth import router as auth_router
+from app.routers.calendar import router as calendar_router
 from app.routers.categories import router as categories_router
 from app.routers.reminders import router as reminders_router
 from app.routers.schedules import router as schedules_router
@@ -17,6 +18,7 @@ app.include_router(categories_router)
 app.include_router(tasks_router)
 app.include_router(schedules_router)
 app.include_router(reminders_router)
+app.include_router(calendar_router)
 
 
 @app.get("/health", tags=["Health"])
