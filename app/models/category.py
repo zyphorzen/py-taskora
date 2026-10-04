@@ -9,6 +9,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 
 if TYPE_CHECKING:
+    from app.models.task import Task
     from app.models.user import User
 
 
@@ -56,6 +57,7 @@ class Category(Base):
     )
 
     user: Mapped["User"] = relationship("User", back_populates="categories")
+    tasks: Mapped[list["Task"]] = relationship("Task", back_populates="category")
 
     __table_args__ = (
         UniqueConstraint("user_id", "name", name="uq_categories_user_id_name"),
