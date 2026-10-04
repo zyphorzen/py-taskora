@@ -11,6 +11,7 @@ from app.core.database import Base
 
 if TYPE_CHECKING:
     from app.models.category import Category
+    from app.models.schedule import Schedule
     from app.models.task import Task
 
 
@@ -67,6 +68,11 @@ class User(Base):
     )
     tasks: Mapped[list["Task"]] = relationship(
         "Task",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    schedules: Mapped[list["Schedule"]] = relationship(
+        "Schedule",
         back_populates="user",
         cascade="all, delete-orphan",
     )
