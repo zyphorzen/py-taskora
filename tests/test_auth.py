@@ -4,7 +4,12 @@ import pytest
 from httpx2 import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import create_access_token, decode_access_token, get_password_hash, verify_password
+from app.core.security import (
+    create_access_token,
+    decode_access_token,
+    get_password_hash,
+    verify_password,
+)
 from app.models.user import User
 
 
@@ -28,7 +33,9 @@ class TestAuthRegistration:
         assert "hashed_password" not in data
         assert uuid.UUID(data["id"])
 
-    async def test_register_duplicate_email(self, client: AsyncClient, active_user: User):
+    async def test_register_duplicate_email(
+        self, client: AsyncClient, active_user: User
+    ):
         suffix = uuid.uuid4().hex[:8]
         payload = {
             "username": f"diff_user_{suffix}",
@@ -39,7 +46,9 @@ class TestAuthRegistration:
         assert response.status_code == 409
         assert response.json()["detail"] == "Email already registered"
 
-    async def test_register_duplicate_username(self, client: AsyncClient, active_user: User):
+    async def test_register_duplicate_username(
+        self, client: AsyncClient, active_user: User
+    ):
         suffix = uuid.uuid4().hex[:8]
         payload = {
             "username": active_user.username,
@@ -60,7 +69,9 @@ class TestAuthRegistration:
             {"username": "usr", "password": "Pass123456!"},
         ],
     )
-    async def test_register_validation_errors(self, client: AsyncClient, invalid_payload: dict):
+    async def test_register_validation_errors(
+        self, client: AsyncClient, invalid_payload: dict
+    ):
         response = await client.post("/auth/register", json=invalid_payload)
         assert response.status_code == 422
 
@@ -121,7 +132,9 @@ class TestAuthLogin:
 class TestAuthProtectedEndpoints:
     """Comprehensive tests for JWT verification and protected routes."""
 
-    async def test_get_current_user_me_success(self, client: AsyncClient, user_and_token):
+    async def test_get_current_user_me_success(
+        self, client: AsyncClient, user_and_token
+    ):
         user, _, headers = user_and_token
         response = await client.get("/auth/me", headers=headers)
         assert response.status_code == 200
@@ -142,7 +155,9 @@ class TestAuthProtectedEndpoints:
         assert response.status_code == 401
         assert response.json()["detail"] == "Could not validate credentials"
 
-    async def test_get_current_user_expired_token(self, client: AsyncClient, active_user: User):
+    async def test_get_current_user_expired_token(
+        self, client: AsyncClient, active_user: User
+    ):
         expired_token = create_access_token(
             subject=str(active_user.id),
             expires_delta=timedelta(minutes=-10),
@@ -167,7 +182,9 @@ class TestAuthProtectedEndpoints:
         assert response.status_code == 401
         assert response.json()["detail"] == "User not found"
 
-    async def test_get_current_user_inactive_user(self, client: AsyncClient, inactive_user: User):
+    async def test_get_current_user_inactive_user(
+        self, client: AsyncClient, inactive_user: User
+    ):
         token = create_access_token(subject=str(inactive_user.id))
         headers = {"Authorization": f"Bearer {token}"}
         response = await client.get("/auth/me", headers=headers)
@@ -187,7 +204,9 @@ class TestSecurityUtilities:
 
     def test_jwt_token_creation_and_expiration(self):
         subject = "test-subject"
-        token = create_access_token(subject=subject, expires_delta=timedelta(minutes=15))
+        token = create_access_token(
+            subject=subject, expires_delta=timedelta(minutes=15)
+        )
         payload = decode_access_token(token)
         assert payload is not None
         assert payload["sub"] == subject

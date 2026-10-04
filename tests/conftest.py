@@ -30,6 +30,7 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
 @pytest_asyncio.fixture
 async def create_user(db_session: AsyncSession):
     """Factory fixture to create test users."""
+
     async def _create(
         username: str | None = None,
         email: str | None = None,
