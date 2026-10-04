@@ -1,5 +1,7 @@
 from fastapi import FastAPI
 from app.core.config import settings
+from app.core.exceptions import setup_exception_handlers
+from app.core.middleware import setup_middleware
 from app.routers.auth import router as auth_router
 from app.routers.calendar import router as calendar_router
 from app.routers.categories import router as categories_router
@@ -13,6 +15,9 @@ app = FastAPI(
     version="1.0.0",
     description="Backend API for Taskora V1 - Schedule, Task, Calendar, and Reminder Management",
 )
+
+setup_middleware(app)
+setup_exception_handlers(app)
 
 app.include_router(auth_router)
 app.include_router(categories_router)
