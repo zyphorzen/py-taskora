@@ -24,7 +24,6 @@ class TestTaskCRUD:
         assert uuid.UUID(data["id"])
 
     async def test_create_task_with_category(self, client: AsyncClient, auth_headers):
-        # Create category first
         cat_res = await client.post(
             "/categories",
             json={"name": f"Home_{uuid.uuid4().hex[:6]}"},
@@ -63,7 +62,6 @@ class TestTaskCRUD:
             "Authorization": f"Bearer {create_access_token(subject=str(user_b.id))}"
         }
 
-        # User A creates a category
         cat_res = await client.post(
             "/categories",
             json={"name": f"A_Cat_{uuid.uuid4().hex[:6]}"},
@@ -71,7 +69,6 @@ class TestTaskCRUD:
         )
         cat_id_a = cat_res.json()["id"]
 
-        # User B tries to use User A's category
         payload = {"title": "Intruder task", "category_id": cat_id_a}
         res = await client.post("/tasks", json=payload, headers=headers_b)
         assert res.status_code == 400
@@ -201,7 +198,6 @@ class TestTaskCRUD:
         task_id = create_res.json()["id"]
         assert create_res.json()["completed_at"] is None
 
-        # Mark completed -> completed_at auto generated
         patch_completed = await client.patch(
             f"/tasks/{task_id}",
             json={"status": "completed"},
@@ -210,7 +206,6 @@ class TestTaskCRUD:
         assert patch_completed.status_code == 200
         assert patch_completed.json()["completed_at"] is not None
 
-        # Change back to in_progress -> completed_at cleared
         patch_reopen = await client.patch(
             f"/tasks/{task_id}",
             json={"status": "in_progress"},

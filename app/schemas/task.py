@@ -77,6 +77,41 @@ class TaskResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class TaskStatusUpdate(BaseModel):
+    status: TaskStatus = Field(..., description="Target status")
+
+
+class TaskPriorityUpdate(BaseModel):
+    priority: TaskPriority = Field(..., description="Target priority level")
+
+
+class TaskBulkStatusUpdate(BaseModel):
+    task_ids: list[uuid.UUID] = Field(
+        ..., min_length=1, description="List of task IDs to update"
+    )
+    status: TaskStatus = Field(..., description="Target status for all specified tasks")
+
+
+class TaskBulkDelete(BaseModel):
+    task_ids: list[uuid.UUID] = Field(
+        ..., min_length=1, description="List of task IDs to delete"
+    )
+
+
+class TaskBulkOperationResponse(BaseModel):
+    affected_count: int
+    task_ids: list[uuid.UUID]
+
+
+class TaskStatisticsResponse(BaseModel):
+    total: int
+    by_status: dict[str, int]
+    by_priority: dict[str, int]
+    completed_count: int
+    pending_count: int
+    overdue_count: int
+
+
 __all__ = [
     "TaskStatus",
     "TaskPriority",
@@ -84,4 +119,10 @@ __all__ = [
     "TaskCreate",
     "TaskUpdate",
     "TaskResponse",
+    "TaskStatusUpdate",
+    "TaskPriorityUpdate",
+    "TaskBulkStatusUpdate",
+    "TaskBulkDelete",
+    "TaskBulkOperationResponse",
+    "TaskStatisticsResponse",
 ]

@@ -10,10 +10,16 @@ from app.models.category import Category
 from app.models.task import Task
 from app.models.user import User
 from app.schemas.task import (
+    TaskBulkDelete,
+    TaskBulkOperationResponse,
+    TaskBulkStatusUpdate,
     TaskCreate,
     TaskPriority,
+    TaskPriorityUpdate,
     TaskResponse,
+    TaskStatisticsResponse,
     TaskStatus,
+    TaskStatusUpdate,
     TaskUpdate,
 )
 
@@ -70,6 +76,127 @@ async def create_task(
     await db.commit()
     await db.refresh(task)
     return task
+
+
+@router.get(
+    "/statistics",
+    response_model=TaskStatisticsResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get task statistics for the authenticated user",
+)
+async def get_task_statistics(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> TaskStatisticsResponse:
+    stmt = select(Task).where(Task.user_id == current_user.id)
+    result = await db.execute(stmt)
+    tasks = result.scalars().all()
+
+    now = datetime.now(timezone.utc)
+    by_status = {s.value: 0 for s in TaskStatus}
+    by_priority = {p.value: 0 for p in TaskPriority}
+    completed_count = 0
+    pending_count = 0
+    overdue_count = 0
+
+    for task in tasks:
+        if task.status in by_status:
+            by_status[task.status] += 1
+        else:
+            by_status[task.status] = 1
+
+        if task.priority in by_priority:
+            by_priority[task.priority] += 1
+        else:
+            by_priority[task.priority] = 1
+
+        if task.status == TaskStatus.COMPLETED.value:
+            completed_count += 1
+        elif task.status in (TaskStatus.TODO.value, TaskStatus.IN_PROGRESS.value):
+            pending_count += 1
+
+        if (
+            task.due_date is not None
+            and task.due_date < now
+            and task.status
+            not in (TaskStatus.COMPLETED.value, TaskStatus.CANCELLED.value)
+        ):
+            overdue_count += 1
+
+    return TaskStatisticsResponse(
+        total=len(tasks),
+        by_status=by_status,
+        by_priority=by_priority,
+        completed_count=completed_count,
+        pending_count=pending_count,
+        overdue_count=overdue_count,
+    )
+
+
+@router.post(
+    "/bulk/status",
+    response_model=TaskBulkOperationResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Bulk update status for tasks",
+)
+async def bulk_update_status(
+    bulk_in: TaskBulkStatusUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> TaskBulkOperationResponse:
+    stmt = select(Task).where(
+        Task.id.in_(bulk_in.task_ids),
+        Task.user_id == current_user.id,
+    )
+    result = await db.execute(stmt)
+    tasks = list(result.scalars().all())
+
+    now = datetime.now(timezone.utc)
+    new_status = bulk_in.status.value
+    updated_ids = []
+    for task in tasks:
+        task.status = new_status
+        if new_status == TaskStatus.COMPLETED.value:
+            task.completed_at = now
+        else:
+            task.completed_at = None
+        updated_ids.append(task.id)
+
+    await db.commit()
+    return TaskBulkOperationResponse(
+        affected_count=len(updated_ids),
+        task_ids=updated_ids,
+    )
+
+
+@router.post(
+    "/bulk/delete",
+    response_model=TaskBulkOperationResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Bulk delete tasks",
+)
+async def bulk_delete_tasks(
+    bulk_in: TaskBulkDelete,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> TaskBulkOperationResponse:
+    stmt = select(Task).where(
+        Task.id.in_(bulk_in.task_ids),
+        Task.user_id == current_user.id,
+    )
+    result = await db.execute(stmt)
+    tasks = list(result.scalars().all())
+
+    deleted_ids = []
+    for task in tasks:
+        deleted_ids.append(task.id)
+        await db.delete(task)
+
+    await db.commit()
+    return TaskBulkOperationResponse(
+        affected_count=len(deleted_ids),
+        task_ids=deleted_ids,
+    )
 
 
 @router.get(
@@ -218,6 +345,136 @@ async def update_task(
     if "completed_at" in update_data:
         task.completed_at = update_data["completed_at"]
 
+    await db.commit()
+    await db.refresh(task)
+    return task
+
+
+@router.patch(
+    "/{task_id}/status",
+    response_model=TaskResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Update single task status",
+)
+async def update_task_status(
+    task_id: uuid.UUID,
+    status_in: TaskStatusUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> Task:
+    stmt = select(Task).where(
+        Task.id == task_id,
+        Task.user_id == current_user.id,
+    )
+    result = await db.execute(stmt)
+    task = result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Task not found",
+        )
+
+    new_status = status_in.status.value
+    old_status = task.status
+    task.status = new_status
+    if (
+        new_status == TaskStatus.COMPLETED.value
+        and old_status != TaskStatus.COMPLETED.value
+    ):
+        task.completed_at = datetime.now(timezone.utc)
+    elif new_status != TaskStatus.COMPLETED.value:
+        task.completed_at = None
+
+    await db.commit()
+    await db.refresh(task)
+    return task
+
+
+@router.patch(
+    "/{task_id}/priority",
+    response_model=TaskResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Update single task priority",
+)
+async def update_task_priority(
+    task_id: uuid.UUID,
+    priority_in: TaskPriorityUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> Task:
+    stmt = select(Task).where(
+        Task.id == task_id,
+        Task.user_id == current_user.id,
+    )
+    result = await db.execute(stmt)
+    task = result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Task not found",
+        )
+
+    task.priority = priority_in.priority.value
+    await db.commit()
+    await db.refresh(task)
+    return task
+
+
+@router.post(
+    "/{task_id}/complete",
+    response_model=TaskResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Mark task as completed",
+)
+async def mark_task_complete(
+    task_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> Task:
+    stmt = select(Task).where(
+        Task.id == task_id,
+        Task.user_id == current_user.id,
+    )
+    result = await db.execute(stmt)
+    task = result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Task not found",
+        )
+
+    task.status = TaskStatus.COMPLETED.value
+    task.completed_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(task)
+    return task
+
+
+@router.post(
+    "/{task_id}/reopen",
+    response_model=TaskResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Reopen completed or cancelled task to todo",
+)
+async def reopen_task(
+    task_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> Task:
+    stmt = select(Task).where(
+        Task.id == task_id,
+        Task.user_id == current_user.id,
+    )
+    result = await db.execute(stmt)
+    task = result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Task not found",
+        )
+
+    task.status = TaskStatus.TODO.value
+    task.completed_at = None
     await db.commit()
     await db.refresh(task)
     return task
