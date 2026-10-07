@@ -11,12 +11,10 @@ pwd_hasher = PasswordHasher()
 
 
 def get_password_hash(password: str) -> str:
-    """Hash a plaintext password using Argon2id."""
     return pwd_hasher.hash(password)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a plaintext password against an Argon2 hash."""
     try:
         return pwd_hasher.verify(hashed_password, plain_password)
     except (VerifyMismatchError, InvalidHashError):
@@ -27,7 +25,6 @@ def create_access_token(
     subject: str | Any,
     expires_delta: timedelta | None = None,
 ) -> str:
-    """Generate a signed JWT access token."""
     now = datetime.now(timezone.utc)
     if expires_delta:
         expire = now + expires_delta
@@ -48,7 +45,6 @@ def create_access_token(
 
 
 def decode_access_token(token: str) -> dict[str, Any] | None:
-    """Decode and validate a JWT access token."""
     try:
         payload = jwt.decode(
             token,

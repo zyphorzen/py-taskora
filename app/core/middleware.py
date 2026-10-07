@@ -35,6 +35,10 @@ class ProcessTimeAndRequestIdMiddleware(BaseHTTPMiddleware):
         duration = time.perf_counter() - start_time
         response.headers["X-Process-Time"] = f"{duration:.6f}"
         response.headers["X-Request-ID"] = req_id
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         return response
 
 
@@ -45,6 +49,13 @@ def setup_middleware(app: FastAPI) -> None:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
-        expose_headers=["X-Request-ID", "X-Process-Time"],
+        expose_headers=[
+            "X-Request-ID",
+            "X-Process-Time",
+            "X-Content-Type-Options",
+            "X-Frame-Options",
+            "X-XSS-Protection",
+            "Referrer-Policy",
+        ],
     )
     app.add_middleware(ProcessTimeAndRequestIdMiddleware)
